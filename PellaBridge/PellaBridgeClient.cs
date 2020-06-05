@@ -18,7 +18,9 @@ using System.Text.Json.Serialization;
 namespace PellaBridge
 {
     /// <summary>
-    /// High level interface class for Pella Bridge
+    /// High level interface class for Pella Bridge.
+    /// Network connections and TCP level details are handled by PellaBridgeTCPClient, to include handling socket IO exceptions and automatically reconnecting.
+    /// Application level formatting and response handling are handled here.  The only exceptions handled here are Timeouts.
     /// </summary>
     public class PellaBridgeClient
     {
@@ -29,10 +31,9 @@ namespace PellaBridge
         private IPAddress hubIP;
 
         // default timeout to wait for a response from the bridge
-        private const int timeout = 500;
+        private const int timeout = 2000;
 
         // Events indicating returns of various types of responses
-        private readonly AutoResetEvent evtHello = new AutoResetEvent(false);
         private readonly AutoResetEvent evtBridgeStatus = new AutoResetEvent(false);
         private readonly AutoResetEvent evtPointCount = new AutoResetEvent(false);
         private readonly AutoResetEvent evtPointDevice = new AutoResetEvent(false);
@@ -42,6 +43,7 @@ namespace PellaBridge
         // Variables read from responses
         private BridgeInfo lastBridgeInfo;
         private DateTime lastHello;
+
         private int lastPointCount;
         private PellaBridgeDevice lastDevice;
         private int lastBatteryStatus;
@@ -64,16 +66,9 @@ namespace PellaBridge
 
         public BridgeInfo GetBridgeInfo()
         {
-            try
-            {
-                lastCommand = "BRIDGEINFO";
-                tcpClient.SendCommand("?BRIDGEINFO");
-            }
-            catch (Exception)
-            {
+            lastCommand = "BRIDGEINFO";
+            tcpClient.SendCommand("?BRIDGEINFO");
 
-                throw;
-            }
             if (evtBridgeStatus.WaitOne(timeout))
             {
                 bridgeInfo = lastBridgeInfo;
@@ -92,15 +87,9 @@ namespace PellaBridge
         {
             List<PellaBridgeDevice> _devices = new List<PellaBridgeDevice>();
 
-            try
-            {
-                lastCommand = "POINTCOUNT";
-                tcpClient.SendCommand("?POINTCOUNT");
-            }
-            catch (Exception)
-            {
-                throw;
-            }
+            lastCommand = "POINTCOUNT";
+            tcpClient.SendCommand("?POINTCOUNT");
+
             if (evtPointCount.WaitOne(timeout))
             {
                 for (int i = 1; i <= lastPointCount; i++)
@@ -130,16 +119,9 @@ namespace PellaBridge
 
         internal int GetDeviceStatus(int id)
         {
-            try
-            {
-                lastCommand = "POINTSTATUS";
-                tcpClient.SendCommand($"?POINTSTATUS-{id:000}");
-            }
-            catch (Exception)
-            {
+            lastCommand = "POINTSTATUS";
+            tcpClient.SendCommand($"?POINTSTATUS-{id:000}");
 
-                throw;
-            }
             if (evtDeviceStatus.WaitOne(timeout))
             {
                 return lastDeviceStatus;
@@ -150,18 +132,34 @@ namespace PellaBridge
             }
         }
 
+        internal string GetDeviceStatusString(int id)
+        {
+            lastCommand = "POINTSTATUS";
+            tcpClient.SendCommand($"?POINTSTATUS-{id:000}");
+
+            if (evtDeviceStatus.WaitOne(timeout))
+            {
+                PellaBridgeDevice d = devices.Find(x => x.id == id);
+                if (d is null)
+                {
+                    throw new InvalidOperationException("Device ID not found");
+                } else
+                {
+                    d.deviceStatusCode = lastDeviceStatus;
+                }
+                return d.deviceStatus;
+            }
+            else
+            {
+                throw new TimeoutException("Request timed out");
+            }
+        }
+
         internal int GetBatteryStatus(int id)
         {
-            try
-            {
-                lastCommand = "POINTBATTERYGET";
-                tcpClient.SendCommand($"?POINTBATTERYGET-{id:000}");
-            }
-            catch (Exception)
-            {
+            lastCommand = "POINTBATTERYGET";
+            tcpClient.SendCommand($"?POINTBATTERYGET-{id:000}");
 
-                throw;
-            }
             if (evtBatteryStatus.WaitOne(timeout))
             {
                 return lastBatteryStatus;
@@ -172,9 +170,27 @@ namespace PellaBridge
             }
         }
 
+        internal string[] SetShade(int id, int value)
+        {
+            PellaBridgeDevice device = devices.Find(x => x.id == id);
+            if (device is null)
+            {
+                return new string[] { "Error", "Device ID not found" };
+            }
+            if (device.deviceTypeCode != 0x13)
+            {
+                return new string[] { "Error", "Command sent to incompatible device" };
+            }
+            if (value < 0 || value > 106)
+            {
+                return new string[] { "Error", "Command sent an invalid value, should be 0x00-0x6A" };
+            }
+            tcpClient.SendCommand($"POINTSET-{id:000},${value.ToString("X2")}");
+            return new string[] { "Success", "" };
+        }
+
         private void Listener()
         {
-            string message;
             Regex BridgeInfoRegex = new Regex(@"Version: (\w*), MAC: ([\w:]*)");
             Regex HelloRegex = new Regex(@"Insynctive Telnet Server");
             Regex StatusChangeRegex = new Regex(@"POINTSTATUS-([0-9]{3}),\$([0-9A-F][0-9A-F])");
@@ -183,8 +199,15 @@ namespace PellaBridge
             Regex NumericRegex = new Regex(@"\$([0-9A-F][0-9A-F])");
             do
             {
-                tcpClient.messageReceived.WaitOne();
-                if (tcpClient.messageQueue.TryDequeue(out message))
+                // Don't wait forever, in case the TCPClient has thrown a socket error elsewhere and been replaced with a 
+                // new connection.  
+                tcpClient.messageReceived.WaitOne(timeout / 2);
+                // While unlikely, it's possible multiple messages could be waiting after a single event, so loop until all are processed.
+                // Note that a storm of messages is likely to cause issues, as we only track the last command received
+                // So responses may end up getting matching with the wrong request.  But that it unavoidable and 
+                // will likely never happen in reality.  Instead what is more likely is the device pushes an update
+                // while we are sending a command or refresh, and that should work fine.
+                while (tcpClient.messageQueue.TryDequeue(out string message))
                 {
                     Match m;
                     int deviceID;
@@ -214,14 +237,16 @@ namespace PellaBridge
                             deviceID = Int32.Parse(m.Groups[1].Value);
                             newDeviceStatusCode = Convert.ToInt32(m.Groups[2].Value, 16);
                             device = devices.Find(x => x.id == deviceID);
-                            UpdateBattery(device, newDeviceStatusCode);
+                            if (device is null) break;
+                            UpdateDeviceStatus(device, newDeviceStatusCode);
                             break;
                         case string msg when BatteryChangeRegex.IsMatch(msg):
                             m = StatusChangeRegex.Match(msg);
                             deviceID = Int32.Parse(m.Groups[1].Value);
                             newBatteryStatus = Convert.ToInt32(m.Groups[2].Value, 16);
                             device = devices.Find(x => x.id == deviceID);
-                            UpdateDeviceStatus(device, newBatteryStatus);
+                            if (device is null) break;
+                            UpdateBattery(device, newBatteryStatus);
                             break;
                         case string msg when PointCountRegex.IsMatch(msg):
                             m = PointCountRegex.Match(msg);

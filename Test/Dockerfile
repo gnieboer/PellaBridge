@@ -6,16 +6,16 @@ EXPOSE 80
 
 FROM mcr.microsoft.com/dotnet/core/sdk:3.1-buster AS build
 WORKDIR /src
-COPY ["PellaBridge/PellaBridge.csproj", "PellaBridge/"]
-RUN dotnet restore "PellaBridge/PellaBridge.csproj"
+COPY ["Test/Test.csproj", "Test/"]
+RUN dotnet restore "Test/Test.csproj"
 COPY . .
-WORKDIR "/src/PellaBridge"
-RUN dotnet build "PellaBridge.csproj" -c Release -o /app/build
+WORKDIR "/src/Test"
+RUN dotnet build "Test.csproj" -c Release -o /app/build
 
 FROM build AS publish
-RUN dotnet publish "PellaBridge.csproj" -c Release -o /app/publish
+RUN dotnet publish "Test.csproj" -c Release -o /app/publish
 
 FROM base AS final
 WORKDIR /app
 COPY --from=publish /app/publish .
-ENTRYPOINT ["dotnet", "PellaBridge.dll"]
+ENTRYPOINT ["dotnet", "Test.dll"]

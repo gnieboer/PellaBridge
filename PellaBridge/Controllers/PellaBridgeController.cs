@@ -4,8 +4,6 @@ using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 
-// For more information on enabling Web API for empty projects, visit https://go.microsoft.com/fwlink/?LinkID=397860
-
 namespace PellaBridge.Controllers
 {
     [Route("api/[controller]")]
@@ -49,6 +47,22 @@ namespace PellaBridge.Controllers
         public int DeviceStatus(int id)
         {
             return Program.pellaBridgeClient.GetDeviceStatus(id);
+        }
+
+        // GET: api/<PellaBridgeController>/devicestatusstring/1
+        [HttpGet]
+        [Route("devicestatusstring/{id}")]
+        public string DeviceStatusString(int id)
+        {
+            return Program.pellaBridgeClient.GetDeviceStatusString(id);
+        }
+
+        // GET: api/<PellaBridgeController>/setshade/1/106
+        [HttpGet]
+        [Route("setshade/{id}/{value}")]
+        public IEnumerable<string> SetShade(int id, int value)
+        {
+            return Program.pellaBridgeClient.SetShade(id, value);
         }
     }
 }

@@ -2,8 +2,10 @@
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Net;
 using System.Net.Sockets;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading;
 
@@ -19,6 +21,15 @@ namespace PellaBridge
         private TcpClient tcpClient;
         private NetworkStream netStream;
         /// <summary>
+        /// Event consumed by subscriber to indicate data was received and has been queued
+        /// </summary>
+        public AutoResetEvent messageReceived = new AutoResetEvent(false);
+        /// <summary>
+        /// Thread-safe queue for subscriber to retrieve messages
+        /// </summary>
+        public ConcurrentQueue<string> messageQueue = new ConcurrentQueue<string>();
+
+        /// <summary>
         /// This will be set to the default until informed by ST of the correct option or via environment variable in the Docker setup
         /// </summary>
         public IPAddress bridgeIPAddress { get; private set; }
@@ -31,21 +42,35 @@ namespace PellaBridge
         /// </summary>
         public const string defaultIPAddress = "192.168.100.121";
 
-        public AutoResetEvent messageReceived = new AutoResetEvent(false);
 
-        public ConcurrentQueue<string> messageQueue = new ConcurrentQueue<string>();
+        /// <summary>
+        /// Keep Alive setting every "X" seconds
+        /// </summary>
+        public const int keepAliveTimesec = 180;
+        /// <summary>
+        /// Manual 'Keep Alive' ping every "X" minutes
+        /// </summary>
+        public const int pingIntervalmins = 4;
+        /// <summary>
+        /// When reconnecting, how long to wait between attempts in ms
+        /// </summary>
+        public const int reconnectWaitTimems = 1000;
+        /// <summary>
+        /// How long to wait between checks for incoming data in the read buffer.
+        /// </summary>
+        public const int ReceiveSpinWaitTimems = 50;
 
         public PellaBridgeTCPClient()
         {
-            Busy = true; 
-            tcpClient = new TcpClient();
-            tcpClient.LingerState.Enabled = false;                          // The default but stated explicitly for clarity
+            GetNewTCPClient();
         }
 
-        /// <summary>
-        /// The bridge is a simple single connection TCP server, so we will block if the hub sends multiple requests async-ly
-        /// </summary>
-        public bool Busy { get; private set; }
+        private void GetNewTCPClient()
+        {
+            tcpClient = new TcpClient();
+            tcpClient.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.KeepAlive, true);
+            tcpClient.Client.SetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.TcpKeepAliveTime, keepAliveTimesec);
+        }
 
         internal void Init()
         {
@@ -67,109 +92,171 @@ namespace PellaBridge
             }
         }
 
-        internal void Init(IPAddress _bridgeIPAddress)
+        internal void Connect()
         {
-            this.bridgeIPAddress = _bridgeIPAddress;
+            System.Threading.Thread listenerThread = new System.Threading.Thread(Listener);
+            System.Threading.Thread pingerThread = new System.Threading.Thread(Pinger);
+            do
+            {
+                try
+                {
+                    if (tcpClient.Connected)
+                    {
+                        tcpClient.Close();
+                        tcpClient.Dispose();
+                        netStream = null;                                   // Ensure we don't keep a reference to a transiently invalidating stream
+                        GetNewTCPClient();
+                    }
+                    if (bridgeIPAddress is null)
+                    {
+                        throw new InvalidOperationException("Bridge must be initialized before Connect() can be called");
+                    }
+
+                    tcpClient.Connect(bridgeIPAddress, port);
+                    netStream = tcpClient.GetStream();
+                }
+                catch (SocketException e)
+                {
+                    Trace.WriteLine($"SocketException: {e}");
+                }
+            } while (!tcpClient.Connected);
+
+            listenerThread.Start();
+            pingerThread.Start();
         }
 
         /// <summary>
         /// Sends the low-level TCP query/command to the bridge
+        /// This method must be synchronized as only one thread can access netStream.write() at once.
         /// </summary>
         /// <param name="request">Command string to send to the Pella Bridge</param>
-        /// <returns>The bridge's response</returns>
-        internal int SendCommand(string request)
+        [MethodImpl(MethodImplOptions.Synchronized)]
+        internal void SendCommand(string request)
         {
-            if (!tcpClient.Connected)
-            {
-                Trace.WriteLine("Request received while client disconnected, attempting reconnect");
-                if (this.Connect() != 0)
-                {
-                    return 1;
-                }
-            }
-
             byte[] outdata = Encoding.ASCII.GetBytes(request);
 
             try
             {
+                // While we could check if the connection is open and the netStream.CanWrite is true, most errors will happen here and the corrective
+                // action is the same, so just blindly try to write.
                 netStream.Write(outdata, 0, outdata.Length);
-                Trace.WriteLine($"S- {request}");
-            }
-            catch (System.IO.IOException e)
-            {
-                Trace.WriteLine($"IO Error received while transmitting data: {e}");
-                return e.HResult;
-            }
-
-            return 0;
-        }
-
-
-        internal int Connect(IPAddress _bridgeIPAddress)
-        {
-            this.Init(_bridgeIPAddress);
-            return this.Connect();
-        }
-
-        internal int Connect()
-        {
-            try
-            {
-                if (tcpClient.Connected)
+                if (request == "\r\n")
                 {
-                    tcpClient.Close();
-                    netStream = null;                                   // Ensure we don't keep a reference to a transiently invalidating stream
-                    tcpClient = new TcpClient();
-                }
-                if (bridgeIPAddress is null)
+                    Trace.WriteLine($"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} Sent CRLF Ping");
+                } else
                 {
-                    throw new InvalidOperationException("Bridge must be initialized before Connect() can be called");
+                    Trace.WriteLine($"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} S- {request}");
                 }
-                System.Threading.Thread listenerThread = new System.Threading.Thread(Listener);
-                tcpClient.Connect(bridgeIPAddress, port);
-                netStream = tcpClient.GetStream();
-                listenerThread.Start();
+                
             }
             catch (SocketException e)
             {
-                Trace.WriteLine($"SocketException: {e}");
-                return e.ErrorCode;
+                Trace.WriteLine($"Socket Error received while transmitting data: {e}");
+                Reconnect();
+                netStream.Write(outdata, 0, outdata.Length);
+                if (request == "\r\n")
+                {
+                    Trace.WriteLine($"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} Sent CRLF Ping");
+                }
+                else
+                {
+                    Trace.WriteLine($"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} S- {request}");
+                }
             }
-            return 0;
         }
 
         /// <summary>
         /// Listener reads incoming data from the Pella Bridge and places it into a FIFO queue
         /// and fires an event to notify upstream that new data has been received for parsing.
+        /// This should only be called once, as only one thread can access netStream.Read() at a time.
         /// </summary>
         private void Listener()
         {
-            byte[] indata = new byte[256];
-            int messagelength = 0;
+            byte[] indata = new byte[128];
+            int messagelength;
 
             do
             {
                 if(tcpClient.Connected)
                 {
                     // Due to simplicity of implementation, we assume all messages are under the buffer size
-                    if (netStream.DataAvailable)
+                    // So we don't merge multiple retrievals into a single message
+                    while (netStream.DataAvailable)
                     {
-                        messagelength = netStream.Read(indata, 0, indata.Length);
+                        try
+                        {
+                            messagelength = netStream.Read(indata, 0, indata.Length);
+                        }
+                        catch (SocketException e)
+                        {
+                            Trace.WriteLine($"Socket Error received while receiving data: {e}");
+                            Reconnect();
+                            messagelength = netStream.Read(indata, 0, indata.Length);
+                        }
                         if (messagelength > 0)
                         {
                             string message = Encoding.ASCII.GetString(indata, 0, messagelength);
-                            Trace.Write($"R- {message}");  // responses include crlf
-                            messageQueue.Enqueue(message);
+                            Trace.Write($"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} R- {message}");  // responses include crlf
+                            // in case multiple messages end up in the same buffer read, they should be sep'd by a crlf
+                            foreach (string msg in message.Split("\r\n"))
+                            {
+                                messageQueue.Enqueue(msg);
+                            }
                             messageReceived.Set();
                         }
-                    } else
-                    {
+                        // A faster spin when there might be a follow-on command coming
+                        // Generally commands seem to take about 7ms to process, so we'll wait 10ms
+                        // to ensure we catch the next command on this spin.
                         Thread.Sleep(10);
-                    }
+                    } 
+                    Thread.Sleep(ReceiveSpinWaitTimems);
                 } else
                 {
-                    Thread.Sleep(10);
+                    Thread.Sleep(ReceiveSpinWaitTimems);
                 }
+            } while (true);
+        }
+
+        /// <summary>
+        /// KeepAlive should in theory keep the connection open, and sending commands will automatically re-open a pipe
+        /// However, if the connection dies, we will not receive notifications until some action re-established the pipe
+        /// So we need to manually ping every so often as KeepAlive has not proven sufficiently reliable.
+        /// </summary>
+        private void Pinger()
+        {
+            do
+            {
+                Thread.Sleep(pingIntervalmins * 1000 * 60);
+                SendCommand("\r\n");
+            } while (true);
+        }
+
+        /// <summary>
+        /// This continously tries to reconnect the socket.  It will try forever since the app has no purpose without a connection
+        /// Note there is a potential issue remaining here as both SendCommand and Listener might try to call here.
+        /// Only one thread can try to reconnect, so the other is going to be queued, so when the first reconnects, the second
+        /// is unaware of the success and so will disconnect and reconnect again.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.Synchronized)]
+        internal void Reconnect()
+        {
+            do
+            {
+                try
+                {
+                    tcpClient.Close();
+                    tcpClient.Dispose();
+                    GetNewTCPClient();
+                    tcpClient.Connect(bridgeIPAddress, port);
+                    netStream = tcpClient.GetStream();
+                    return;
+                }
+                catch (SocketException e)
+                {
+                    Trace.WriteLine($"Socket Error received while reconnecting: {e}");
+                    Thread.Sleep(reconnectWaitTimems);
+                }
+
             } while (true);
         }
     }
