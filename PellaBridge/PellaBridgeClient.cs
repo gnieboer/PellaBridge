@@ -66,6 +66,7 @@ namespace PellaBridge
             EnumerateDevices();
         }
 
+
         public BridgeInfo GetBridgeInfo()
         {
             lastCommand = "BRIDGEINFO";
@@ -287,6 +288,13 @@ namespace PellaBridge
             Trace.WriteLine($"Sending updated status to hub on device ID {device.Id} to {newDeviceStatusCode}");
             device.DeviceStatusCode = newDeviceStatusCode;
             SendUpdateToHub(device);
+        }
+
+        internal PellaBridgeDevice PushDevice(int id)
+        {
+            PellaBridgeDevice device = devices[id];
+            SendUpdateToHub(device);
+            return device;
         }
         private void SendUpdateToHub(PellaBridgeDevice device)
         {

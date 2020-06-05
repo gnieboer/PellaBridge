@@ -64,5 +64,20 @@ namespace PellaBridge.Controllers
         {
             return Program.pellaBridgeClient.SetShade(id, value);
         }
+
+        /// <summary>
+        /// A test method to allow the user to manually trigger a push notification from the container to the hub
+        /// Obviates the need to go open and close doors just to troubleshoot the push.
+        /// Container does not give feedback if the push succeeded on this end
+        /// </summary>
+        /// <param name="id">Pella id of device to send</param>
+        /// <returns>request device</returns>
+        // GET: api/<PellaBridgeController>/pushdevice/1
+        [HttpGet]
+        [Route("pushdevice/{id}")]
+        public PellaBridgeDevice PushDevice(int id)
+        {
+            return Program.pellaBridgeClient.PushDevice(id);
+        }
     }
 }
