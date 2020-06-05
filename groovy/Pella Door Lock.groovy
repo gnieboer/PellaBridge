@@ -49,6 +49,18 @@ def installed() {
 	initialize()
 }
 
+def uninstall(){
+    log.debug "Removing Pella Devices..."
+    childDevices.each {
+		try{
+			deleteChildDevice(it.deviceNetworkId, true)
+		}
+		catch (e) {
+			log.debug "Error deleting ${it.deviceNetworkId}: ${e}"
+		}
+	}
+}
+
 def updated() {
 	log.debug "Updated with settings: ${settings}"
 
@@ -122,8 +134,8 @@ def deviceDiscoveryHandler(physicalgraph.device.HubResponse hubResponse) {
     
     json.each { 
     	def childid = it.id
-    	log.debug "finding: ${state.mac + "-" + childid}"
-    	def matchingDevice = childDevices.find({ it.deviceNetworkId == "${state.mac + "-" + childid}" })
+    	log.debug "finding: ${state.mac + "_" + childid}"
+    	def matchingDevice = childDevices.find({ it.deviceNetworkId == "${state.mac + "_" + childid}" })
         if (matchingDevice) {
         	if (matchingDevice.deviceTypeCode == it.deviceTypeCode) {
              	// Save type of devices as current stored... update values since we got them
@@ -148,10 +160,14 @@ def deviceDiscoveryHandler(physicalgraph.device.HubResponse hubResponse) {
 
 def addDevice(Object devicejson)
 {
-	log.debug("Pretending to add new device: ${devicejson}")
-    def hub = location.hubs[0]
+	def hub = location.hubs[0]
     if (devicejson.deviceTypeCode == 13) {
-    	addChildDevice("gnieboer", devicejson.deviceType, state.mac + "-" + devicejson.id, hub.getId(), ["data": ["id": "${devicejson.id}", "deviceStatus": "${devicejson.deviceStatus}", "battery": "${devicejson.batteryStatus}", "deviceTampered": "${devicejson.deviceTampered}"]])
+    	log.debug "Adding new lock: ${devicejson}"
+    	addChildDevice("gnieboer", devicejson.deviceType, state.mac + "_" + devicejson.id, hub.getId(), ["deviceid": "${devicejson.id}", "lock": "${devicejson.deviceStatus}", "battery": "${devicejson.batteryStatus}", "tamper": "${devicejson.deviceTampered}", "apihostip": "${searchTarget}", "apihostport": "${searchTargetPort}"])
+    }
+    if (devicejson.deviceTypeCode == 01) {
+    	log.debug "Adding new door sensor: ${devicejson}"
+    	addChildDevice("gnieboer", devicejson.deviceType, state.mac + "_" + devicejson.id, hub.getId(), ["deviceid": "${devicejson.id}", "contact": "${devicejson.deviceStatus}", "battery": "${devicejson.batteryStatus}", "tamper": "${devicejson.deviceTampered}", "apihostip": "${searchTarget}", "apihostport": "${searchTargetPort}"])
     }
 	
 }
