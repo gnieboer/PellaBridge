@@ -5,8 +5,6 @@ VisualStudioVersion = 16.0.30128.74
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "PellaBridge", "PellaBridge\PellaBridge.csproj", "{ADAE0E7C-D5D8-49B0-9F87-F2940F677B63}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Test", "Test\Test.csproj", "{9240C2B3-1B41-4814-A9B1-0E24B7C30475}"
-EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -17,10 +15,6 @@ Global
 		{ADAE0E7C-D5D8-49B0-9F87-F2940F677B63}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{ADAE0E7C-D5D8-49B0-9F87-F2940F677B63}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{ADAE0E7C-D5D8-49B0-9F87-F2940F677B63}.Release|Any CPU.Build.0 = Release|Any CPU
-		{9240C2B3-1B41-4814-A9B1-0E24B7C30475}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{9240C2B3-1B41-4814-A9B1-0E24B7C30475}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{9240C2B3-1B41-4814-A9B1-0E24B7C30475}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{9240C2B3-1B41-4814-A9B1-0E24B7C30475}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
