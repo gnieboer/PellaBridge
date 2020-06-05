@@ -17,6 +17,9 @@ namespace PellaBridge
 
         public static void Main(string[] args)
         {
+            ConsoleTraceListener consoleTracer = new ConsoleTraceListener();
+            Trace.Listeners.Add(consoleTracer);
+
             // Initialize connection to Pella device and connect
             pellaBridgeClient = new PellaBridgeClient();
             // Set up listener REST API for the ST Hub

@@ -6,42 +6,37 @@ namespace PellaBridge
     {
         public PellaBridgeDevice(int _id, int _deviceTypeCode)
         {
-            deviceTypeCode = _deviceTypeCode;
-            id = _id;
+            DeviceTypeCode = _deviceTypeCode;
+            Id = _id;
         }
 
-        public int id { get; private set; }
-        public int deviceTypeCode { get; private set; }
+        public int Id { get; private set; }
+        public int DeviceTypeCode { get; private set; }
 
-        public string deviceType { 
+        public string DeviceType { 
             get {
-                switch (deviceTypeCode)
+                return DeviceTypeCode switch
                 {
-                    case 0x01:
-                        return "Pella Door";
-                    case 0x03:
-                        return "Pella Garage Door";
-                    case 0x0D:
-                        return "Pella Door Lock";
-                    case 0x13:
-                        return "Pella Blind";
-                    default:
-                        return "Unknown";
-                }
+                    0x01 => "Pella Door",
+                    0x03 => "Pella Garage Door",
+                    0x0D => "Pella Door Lock",
+                    0x13 => "Pella Blind",
+                    _ => "Unknown",
+                };
             }
         }
 
-        public int batteryStatus { get; set; }
+        public int BatteryStatus { get; set; }
 
-        public int deviceStatusCode { get; set; }
+        public int DeviceStatusCode { get; set; }
 
-        public string deviceStatus
+        public string DeviceStatus
         {
             get
             {
-                if (deviceTypeCode == 0x0D)
+                if (DeviceTypeCode == 0x0D)
                 {
-                    switch (deviceStatusCode)
+                    switch (DeviceStatusCode)
                     {
                         case 0x00:
                         case 0x04:
@@ -55,13 +50,13 @@ namespace PellaBridge
                             return "Unknown";
                     }
                 }
-                else if (deviceTypeCode == 0x13)
+                else if (DeviceTypeCode == 0x13)
                 {
-                    return $"{deviceStatusCode}%";
+                    return $"{DeviceStatusCode}%";
                 }
                 else
                 {
-                    switch (deviceStatusCode)
+                    switch (DeviceStatusCode)
                     {
                         case 0x00:
                         case 0x02:
@@ -78,13 +73,13 @@ namespace PellaBridge
             }
         }
 
-        public bool deviceTampered
+        public bool DeviceTampered
         {
             get
             {
-                if (deviceTypeCode != 0x13)
+                if (DeviceTypeCode != 0x13)
                 {
-                    switch (deviceStatusCode)
+                    switch (DeviceStatusCode)
                     {
                         case 0x04:
                         case 0x05:

@@ -24,11 +24,11 @@ namespace PellaBridge
     /// </summary>
     public class PellaBridgeClient
     {
-        private PellaBridgeTCPClient tcpClient;
+        private readonly PellaBridgeTCPClient tcpClient;
         private BridgeInfo bridgeInfo;
         private List<PellaBridgeDevice> devices = new List<PellaBridgeDevice>();
 
-        private IPAddress hubIP;
+        private readonly IPAddress hubIP;
 
         // default timeout to wait for a response from the bridge
         private const int timeout = 2000;
@@ -99,8 +99,8 @@ namespace PellaBridge
                     tcpClient.SendCommand($"?POINTDEVICE-{i:000}");
                     if (evtPointDevice.WaitOne(timeout))
                     {
-                        lastDevice.batteryStatus = this.GetBatteryStatus(i);
-                        lastDevice.deviceStatusCode = this.GetDeviceStatus(i);
+                        lastDevice.BatteryStatus = this.GetBatteryStatus(i);
+                        lastDevice.DeviceStatusCode = this.GetDeviceStatus(i);
                         _devices.Add(lastDevice);
                     }
                     else
@@ -139,15 +139,15 @@ namespace PellaBridge
 
             if (evtDeviceStatus.WaitOne(timeout))
             {
-                PellaBridgeDevice d = devices.Find(x => x.id == id);
+                PellaBridgeDevice d = devices.Find(x => x.Id == id);
                 if (d is null)
                 {
                     throw new InvalidOperationException("Device ID not found");
                 } else
                 {
-                    d.deviceStatusCode = lastDeviceStatus;
+                    d.DeviceStatusCode = lastDeviceStatus;
                 }
-                return d.deviceStatus;
+                return d.DeviceStatus;
             }
             else
             {
@@ -172,12 +172,12 @@ namespace PellaBridge
 
         internal string[] SetShade(int id, int value)
         {
-            PellaBridgeDevice device = devices.Find(x => x.id == id);
+            PellaBridgeDevice device = devices.Find(x => x.Id == id);
             if (device is null)
             {
                 return new string[] { "Error", "Device ID not found" };
             }
-            if (device.deviceTypeCode != 0x13)
+            if (device.DeviceTypeCode != 0x13)
             {
                 return new string[] { "Error", "Command sent to incompatible device" };
             }
@@ -185,7 +185,7 @@ namespace PellaBridge
             {
                 return new string[] { "Error", "Command sent an invalid value, should be 0x00-0x6A" };
             }
-            tcpClient.SendCommand($"POINTSET-{id:000},${value.ToString("X2")}");
+            tcpClient.SendCommand($"POINTSET-{id:000},${value:X2}");
             return new string[] { "Success", "" };
         }
 
@@ -227,7 +227,7 @@ namespace PellaBridge
                                 Version = m.Groups[1].Value,
                                 MAC = m.Groups[2].Value,
                                 connectTime = lastHello,
-                                IP = tcpClient.bridgeIPAddress.ToString()
+                                IP = tcpClient.BridgeIPAddress.ToString()
                             };
                             lastBridgeInfo = bi;
                             evtBridgeStatus.Set();
@@ -236,7 +236,7 @@ namespace PellaBridge
                             m = StatusChangeRegex.Match(msg);
                             deviceID = Int32.Parse(m.Groups[1].Value);
                             newDeviceStatusCode = Convert.ToInt32(m.Groups[2].Value, 16);
-                            device = devices.Find(x => x.id == deviceID);
+                            device = devices.Find(x => x.Id == deviceID);
                             if (device is null) break;
                             UpdateDeviceStatus(device, newDeviceStatusCode);
                             break;
@@ -244,7 +244,7 @@ namespace PellaBridge
                             m = StatusChangeRegex.Match(msg);
                             deviceID = Int32.Parse(m.Groups[1].Value);
                             newBatteryStatus = Convert.ToInt32(m.Groups[2].Value, 16);
-                            device = devices.Find(x => x.id == deviceID);
+                            device = devices.Find(x => x.Id == deviceID);
                             if (device is null) break;
                             UpdateBattery(device, newBatteryStatus);
                             break;
@@ -275,27 +275,25 @@ namespace PellaBridge
 
         private void UpdateBattery(PellaBridgeDevice device, int newBatteryStatus)
         {
-            Trace.WriteLine($"Sending updated battery level to hub on device ID {device.id} to {newBatteryStatus}%");
-            device.batteryStatus = newBatteryStatus;
+            Trace.WriteLine($"Sending updated battery level to hub on device ID {device.Id} to {newBatteryStatus}%");
+            device.BatteryStatus = newBatteryStatus;
             SendUpdateToHub(device);
         }
 
         private void UpdateDeviceStatus(PellaBridgeDevice device, int newDeviceStatusCode)
         {
-            Trace.WriteLine($"Sending updated status to hub on device ID {device.id} to {newDeviceStatusCode}");
-            device.deviceStatusCode = newDeviceStatusCode;
+            Trace.WriteLine($"Sending updated status to hub on device ID {device.Id} to {newDeviceStatusCode}");
+            device.DeviceStatusCode = newDeviceStatusCode;
             SendUpdateToHub(device);
         }
         private void SendUpdateToHub(PellaBridgeDevice device)
         {
             string jsonOutput = JsonSerializer.Serialize(device);
-            using (var client = new HttpClient())
-            {
-                UriBuilder b = new UriBuilder("http", hubIP.ToString(), 39500);
-                client.PostAsync(
-                    b.ToString(),
-                     new StringContent(jsonOutput, Encoding.UTF8, "application/json"));
-            }
+            using var client = new HttpClient();
+            UriBuilder b = new UriBuilder("http", hubIP.ToString(), 39500);
+            client.PostAsync(
+                b.ToString(),
+                 new StringContent(jsonOutput, Encoding.UTF8, "application/json"));
         }
     }
 }

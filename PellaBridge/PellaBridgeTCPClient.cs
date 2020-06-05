@@ -32,7 +32,7 @@ namespace PellaBridge
         /// <summary>
         /// This will be set to the default until informed by ST of the correct option or via environment variable in the Docker setup
         /// </summary>
-        public IPAddress bridgeIPAddress { get; private set; }
+        public IPAddress BridgeIPAddress { get; private set; }
         /// <summary>
         /// Telnet not changeable
         /// </summary>
@@ -67,6 +67,8 @@ namespace PellaBridge
 
         private void GetNewTCPClient()
         {
+            tcpClient?.Close();
+            netStream = null;
             tcpClient = new TcpClient();
             tcpClient.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.KeepAlive, true);
             tcpClient.Client.SetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.TcpKeepAliveTime, keepAliveTimesec);
@@ -78,12 +80,12 @@ namespace PellaBridge
 
             if (bridgeEnvIP == null)
             {
-                bridgeIPAddress = IPAddress.Parse(defaultIPAddress);
+                BridgeIPAddress = IPAddress.Parse(defaultIPAddress);
             } else
             {
                 try
                 {
-                    bridgeIPAddress = IPAddress.Parse(bridgeEnvIP);
+                    BridgeIPAddress = IPAddress.Parse(bridgeEnvIP);
                 }
                 catch (FormatException)
                 {
@@ -100,24 +102,22 @@ namespace PellaBridge
             {
                 try
                 {
-                    if (tcpClient.Connected)
-                    {
-                        tcpClient.Close();
-                        tcpClient.Dispose();
-                        netStream = null;                                   // Ensure we don't keep a reference to a transiently invalidating stream
-                        GetNewTCPClient();
-                    }
-                    if (bridgeIPAddress is null)
+                    if (BridgeIPAddress is null)
                     {
                         throw new InvalidOperationException("Bridge must be initialized before Connect() can be called");
                     }
-
-                    tcpClient.Connect(bridgeIPAddress, port);
+                    if (tcpClient.Connected)
+                    {
+                        GetNewTCPClient();
+                    }
+                    tcpClient.Connect(BridgeIPAddress, port);
                     netStream = tcpClient.GetStream();
                 }
                 catch (SocketException e)
                 {
                     Trace.WriteLine($"SocketException: {e}");
+                    GetNewTCPClient();
+                    Thread.Sleep(500); 
                 }
             } while (!tcpClient.Connected);
 
@@ -247,7 +247,7 @@ namespace PellaBridge
                     tcpClient.Close();
                     tcpClient.Dispose();
                     GetNewTCPClient();
-                    tcpClient.Connect(bridgeIPAddress, port);
+                    tcpClient.Connect(BridgeIPAddress, port);
                     netStream = tcpClient.GetStream();
                     return;
                 }
