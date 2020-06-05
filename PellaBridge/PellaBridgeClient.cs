@@ -62,6 +62,8 @@ namespace PellaBridge
             listenerThread.Start();
             tcpClient.Init();
             tcpClient.Connect();
+            GetBridgeInfo();
+            EnumerateDevices();
         }
 
         public BridgeInfo GetBridgeInfo()

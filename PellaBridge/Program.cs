@@ -23,19 +23,7 @@ namespace PellaBridge
             // Initialize connection to Pella device and connect
             pellaBridgeClient = new PellaBridgeClient();
             // Set up listener REST API for the ST Hub
-            CreateHostBuilder(args).Build().Run();
-            try
-            {
-                BridgeInfo bi = pellaBridgeClient.GetBridgeInfo();
-                Trace.WriteLine("Connection to Bridge Successful");
-                Trace.WriteLine($"Version: {bi.Version}, MAC: {bi.MAC}");
-            }
-            catch (Exception)
-            {
-                Trace.WriteLine("Connection to bridge failed");
-                throw;
-            }
-            
+            CreateHostBuilder(args).Build().Run(); 
         }
 
         public static IHostBuilder CreateHostBuilder(string[] args) =>
