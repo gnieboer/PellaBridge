@@ -18,7 +18,10 @@ metadata {
 		capability "Contact Sensor"
 		capability "Tamper Alert"
         capability "Refresh"
-	}
+        
+		// Command to expose to the parent app to push notifications to the device
+    	command "updateDevice", ["string"]
+    }
 
 	simulator {
 		status "open": "contact:open"
@@ -28,31 +31,42 @@ metadata {
         status "tamperoff" : "tamper:off"
 	}
 
+
     preferences {
-        input name: "apihostip", type: "text", title: "Bridge IP", description: "Enter local IP of API Bridge", required: true, displayDuringSetup: true
-        input name: "apihostport", type: "number", title: "Bridge Port", description: "Enter port of API Bridge", required: true, displayDuringSetup: true
-        input name: "deviceid", type: "number", title: "Pella Device ID", description: "Enter Pella Device ID", required: true, displayDuringSetup: true
+    	section("Note") {
+            paragraph "These settings are pre-populated during installation and generally should not need to be altered"
+            input name: "apihostip", type: "text", title: "Bridge IP", description: "Enter local IP of API Bridge", required: true, displayDuringSetup: true
+            input name: "apihostport", type: "number", title: "Bridge Port", description: "Enter port of API Bridge", required: true, displayDuringSetup: true
+            input name: "deviceid", type: "number", title: "Pella Device ID", description: "Enter Pella Device ID", required: true, displayDuringSetup: true
+        }
     }
 
 	tiles {
-		standardTile("status", "device.contact", width: 3, height: 3) {
-            state "open", label: '${currentValue}', icon: "st.contact.contact.open", backgroundColor: "#ffffff"
-            state "closed", label: '${currentValue}', icon: "st.contact.contact.closed", backgroundColor: "#00A0DC"
+        multiAttributeTile(name: "contact", type: "generic", width: 6, height: 4) {
+			tileAttribute("device.contact", key: "PRIMARY_CONTROL") {
+				attributeState "open", label: '${currentValue}', icon: "st.contact.contact.open", backgroundColor: "#e86d13"
+				attributeState "closed", label: '${currentValue}', icon: "st.contact.contact.closed", backgroundColor: "#00A0DC"
+			}
 		}
-		valueTile("battery", "device.battery", inactiveLabel:false, decoration:"flat", width:1, height:1) {
+        
+		valueTile("battery", "device.battery", inactiveLabel:false, decoration:"flat", width:2, height:2) {
 			state "battery", label:'${currentValue}%', unit:""
 		}
-        standardTile("tamper", "device.tamper", width: 1, height: 1) {
+        standardTile("tamper", "device.tamper", width: 2, height: 2) {
         	state "detected", label: "tamper", icon:"st.alarm.alarm.alarm", backgroundColor:"#ff0000"
         	state "clear", icon:"", backgroundColor:"#ffffff"
     	}
-		standardTile("refresh", "device.refresh", inactiveLabel:false, decoration:"flat", width:1, height:1) {
+		standardTile("refresh", "device.refresh", inactiveLabel:false, decoration:"flat", width:2, height:2) {
 			state "default", label:'', action:"refresh", icon:"st.secondary.refresh"
 		}
 	}
 }
 
-// parse events into attributes
+def installed() {
+	refresh()
+}
+
+// parse events into attributes, only used by simulator
 def parse(String description) {
 	log.debug "Parsing '${description}'"
 	if (description == "contact:open") { open()}
@@ -88,11 +102,22 @@ def refresh() {
 	sendHubCommand(new physicalgraph.device.HubAction("""GET /api/PellaBridge/devicestatus/$id HTTP/1.1\r\nHOST: $host\r\n\r\n""", physicalgraph.device.Protocol.LAN, host, [callback: deviceStatusHandler]))
 }
 
+def updateDevice(device)
+{
+	log.debug("Updating device #${deviceid} after push received")
+	deviceChangeStatus(device.DeviceStatusCode)
+    deviceChangeBattery(device.BatteryStatus)
+}
+
 def batteryRefreshHandler(physicalgraph.device.HubResponse hubResponse)
 {
 	log.debug "received battery response for device ${deviceid}: ${hubResponse.body}"
     state.lastbatteryresponse = hubResponse.requestId
-    def batterylevel = hubResponse.body.toInteger()
+    deviceChangeBattery(hubResponse.body.toInteger())
+}
+
+def deviceChangeBattery(int batterylevel)
+{
     if (batterylevel >= 0 && batterylevel <= 100) {
         log.debug("battery status received: ${batterylevel}")
         sendEvent(name: "battery", value: batterylevel)
@@ -105,7 +130,11 @@ def deviceStatusHandler(physicalgraph.device.HubResponse hubResponse)
 {
 	log.debug "received status response for device ${deviceid}: ${hubResponse}"
     log.debug "response: ${hubResponse.body}"
-    def status = hubResponse.body
+    deviceChangeStatus(hubResponse.body)
+}
+
+def deviceChangeStatus(def status) 
+{
     switch (status)
     {
     case "0":

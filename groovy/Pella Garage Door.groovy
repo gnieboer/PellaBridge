@@ -1,5 +1,5 @@
-﻿/**
- *  Pella Door Lock
+/**
+ *  Pella Garage Door
  *
  *  Copyright 2020 Geof Nieboer
  *
@@ -13,41 +13,41 @@
  *  for the specific language governing permissions and limitations under the License.
  */
 metadata {
-	definition (name: "Pella Door Lock", namespace: "gnieboer", author: "Geof Nieboer", cstHandler: true) {
-		capability "Lock"
-        capability "Battery"
-        capability "Tamper Alert"
+	definition (name: "Pella Garage Door", namespace: "gnieboer", author: "Geof Nieboer", cstHandler: true) {
+		capability "Battery"
+		capability "Contact Sensor"
+		capability "Tamper Alert"
         capability "Refresh"
-
+        
 		// Command to expose to the parent app to push notifications to the device
     	command "updateDevice", ["string"]
     }
 
 	simulator {
-		status "lock": "contact:open"
-		status "unlock": "contact:closed"
+		status "open": "contact:open"
+		status "closed": "contact:closed"
         status "battery" : "battery:50"
         status "tamperon" : "tamper:on"
         status "tamperoff" : "tamper:off"
 	}
 
+
     preferences {
-        input name: "apihostip", type: "text", title: "Bridge IP", description: "Enter local IP of API Bridge", required: true, displayDuringSetup: true
-        input name: "apihostport", type: "number", title: "Bridge Port", description: "Enter port of API Bridge", required: true, displayDuringSetup: true
-        input name: "deviceid", type: "number", title: "Pella Device ID", description: "Enter Pella Device ID", required: true, displayDuringSetup: true
+    	section("Note") {
+            paragraph "These settings are pre-populated during installation and generally should not need to be altered"
+            input name: "apihostip", type: "text", title: "Bridge IP", description: "Enter local IP of API Bridge", required: true, displayDuringSetup: true
+            input name: "apihostport", type: "number", title: "Bridge Port", description: "Enter port of API Bridge", required: true, displayDuringSetup: true
+            input name: "deviceid", type: "number", title: "Pella Device ID", description: "Enter Pella Device ID", required: true, displayDuringSetup: true
+        }
     }
 
 	tiles {
-        // This tile is from the normal device.lock code, so the display will look the sameas any other lock.  However, this lock can't be controlled
-        // remotely, and this tile also supports push button locking/unlocking, so we need customized "nextState" so that firing the toggle doesn't 
-        // change anything
-        multiAttributeTile(name:"status", type: "generic", width: 3, height: 2){
-			tileAttribute ("device.lock", key: "PRIMARY_CONTROL") {
-				attributeState "locked", label:'locked', action:"lock.unlock", icon:"st.locks.lock.locked", backgroundColor:"#00A0DC", nextState:"locked"
-				attributeState "unlocked", label:'unlocked', action:"lock.lock", icon:"st.locks.lock.unlocked", backgroundColor:"#ffffff", nextState:"unlocked"
+        multiAttributeTile(name: "contact", type: "generic", width: 6, height: 4) {
+			tileAttribute("device.contact", key: "PRIMARY_CONTROL") {
+				attributeState "open", label: '${currentValue}', icon: "st.doors.garage.garage-open", backgroundColor: "#e86d13"
+				attributeState "closed", label: '${currentValue}', icon: "st.doors.garage.garage-closed", backgroundColor: "#00A0DC"
 			}
 		}
-        
 		valueTile("battery", "device.battery", inactiveLabel:false, decoration:"flat", width:2, height:2) {
 			state "battery", label:'${currentValue}%', unit:""
 		}
@@ -58,9 +58,6 @@ metadata {
 		standardTile("refresh", "device.refresh", inactiveLabel:false, decoration:"flat", width:2, height:2) {
 			state "default", label:'', action:"refresh", icon:"st.secondary.refresh"
 		}
-        
-        main "status"
-        details(["status", "battery", "tamper", "refresh"])
 	}
 }
 
@@ -71,8 +68,8 @@ def installed() {
 // parse events into attributes, only used by simulator
 def parse(String description) {
 	log.debug "Parsing '${description}'"
-	if (description == "contact:open") { return setlocked()}
-    if (description == "contact:closed") { return setunlocked()}
+	if (description == "contact:open") { open()}
+    if (description == "contact:closed") { closed()}
     if (description == "battery:50") { battery(50)}
     if (description == "tamper:on") { tamper(true)}
     if (description == "tamper:off") { tamper(false)}
@@ -87,12 +84,12 @@ def tamper(boolean tampered)
     }
 }
 
-def setlocked() {
-    sendEvent(name: "lock", value: "locked")
+def open() {
+    sendEvent(name: "contact", value: "open")
 }
 
-def setunlocked() {
-	sendEvent(name: "lock", value: "unlocked")
+def closed() {
+	sendEvent(name: "contact", value: "closed")
 }
 
 def refresh() {
@@ -141,27 +138,27 @@ def deviceChangeStatus(def status)
     {
     case "0":
     	tamper(false);
-        setlocked()
+        closed()
         break;
     case "1":
     	tamper(false);
-        setunlocked()
+        open()
         break;
     case "2":
     	tamper(false);
-        setunlocked()
+        closed()
         break;        
     case "4":
     	tamper(true);
-        setlocked()
+        closed()
         break;
     case "5":
     	tamper(true);
-        setunlocked()
+        open()
         break;
     case "6":
     	tamper(true);
-        setlocked()
+        closed()
         break;           
     default:
       	log.debug("invalid device status received: ${status}")
