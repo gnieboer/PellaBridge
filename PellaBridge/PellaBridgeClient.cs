@@ -303,7 +303,7 @@ namespace PellaBridge
             UriBuilder b = new UriBuilder("http", hubIP.ToString(), 39500);
             client.PostAsync(
                 b.ToString(),
-                 new StringContent(jsonOutput, Encoding.UTF8, "application/json"));
+                 new StringContent(jsonOutput, Encoding.UTF8, "application/json")).Wait();
         }
     }
 }

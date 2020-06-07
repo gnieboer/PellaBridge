@@ -13,7 +13,11 @@ namespace PellaBridge
 {
     /// <summary>
     /// Handles low-level connection with the Pella Bridge over TCP
-    /// Has no knowledge of the Pella command structure
+    /// Has no knowledge of the Pella command structure.
+    /// This class keeps one thread running to read the incoming stream.
+    /// The send stream is handled primarily by incoming web request threads, though
+    /// this class also keeps a thread running to send ping requests every 4 minutes.
+    /// Send requests from all sources are synchronized to ensure only one sends at a time. 
     /// </summary>
     public class PellaBridgeTCPClient
         
@@ -113,9 +117,9 @@ namespace PellaBridge
                     tcpClient.Connect(BridgeIPAddress, port);
                     netStream = tcpClient.GetStream();
                 }
-                catch (SocketException e)
+                catch (Exception e) when (e is SocketException || e is IOException)
                 {
-                    Trace.WriteLine($"SocketException: {e}");
+                    Trace.WriteLine($"Failed to connect to bridge: {e.Message}");
                     GetNewTCPClient();
                     Thread.Sleep(500); 
                 }
@@ -149,9 +153,9 @@ namespace PellaBridge
                 }
                 
             }
-            catch (SocketException e)
+            catch (Exception e) when (e is SocketException || e is IOException)
             {
-                Trace.WriteLine($"Socket Error received while transmitting data: {e}");
+                Trace.WriteLine($"Failed to send command to bridge: {e.Message}");
                 Reconnect();
                 netStream.Write(outdata, 0, outdata.Length);
                 if (request == "\r\n")
@@ -177,43 +181,55 @@ namespace PellaBridge
 
             do
             {
-                if(tcpClient.Connected)
+                try
                 {
-                    // Due to simplicity of implementation, we assume all messages are under the buffer size
-                    // So we don't merge multiple retrievals into a single message
-                    while (netStream.DataAvailable)
+                    if (tcpClient.Connected)
                     {
-                        try
+                        // Due to simplicity of implementation, we assume all messages are under the buffer size
+                        // So we don't merge multiple retrievals into a single message
+                        while (netStream.DataAvailable)
                         {
-                            messagelength = netStream.Read(indata, 0, indata.Length);
-                        }
-                        catch (SocketException e)
-                        {
-                            Trace.WriteLine($"Socket Error received while receiving data: {e}");
-                            Reconnect();
-                            messagelength = netStream.Read(indata, 0, indata.Length);
-                        }
-                        if (messagelength > 0)
-                        {
-                            string message = Encoding.ASCII.GetString(indata, 0, messagelength);
-                            Trace.Write($"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} R- {message}");  // responses include crlf
-                            // in case multiple messages end up in the same buffer read, they should be sep'd by a crlf
-                            foreach (string msg in message.Split("\r\n"))
+                            try
                             {
-                                messageQueue.Enqueue(msg);
+                                messagelength = netStream.Read(indata, 0, indata.Length);
                             }
-                            messageReceived.Set();
+                            catch (Exception e) when (e is SocketException || e is IOException)
+                            {
+                                Trace.WriteLine($"Failed to receive data from bridge: {e.Message}");
+                                Reconnect();
+                                messagelength = netStream.Read(indata, 0, indata.Length);
+                            }
+                            if (messagelength > 0)
+                            {
+                                string message = Encoding.ASCII.GetString(indata, 0, messagelength);
+                                Trace.Write($"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} R- {message}");  // responses include crlf
+                                                                                                      // in case multiple messages end up in the same buffer read, they should be sep'd by a crlf
+                                foreach (string msg in message.Split("\r\n"))
+                                {
+                                    messageQueue.Enqueue(msg);
+                                }
+                                messageReceived.Set();
+                            }
+                            // A faster spin when there might be a follow-on command coming
+                            // Generally commands seem to take about 7ms to process, so we'll wait 10ms
+                            // to ensure we catch the next command on this spin.
+                            Thread.Sleep(10);
                         }
-                        // A faster spin when there might be a follow-on command coming
-                        // Generally commands seem to take about 7ms to process, so we'll wait 10ms
-                        // to ensure we catch the next command on this spin.
-                        Thread.Sleep(10);
-                    } 
-                    Thread.Sleep(ReceiveSpinWaitTimems);
-                } else
-                {
-                    Thread.Sleep(ReceiveSpinWaitTimems);
+                        Thread.Sleep(ReceiveSpinWaitTimems);
+                    }
+                    else
+                    {
+                        Thread.Sleep(ReceiveSpinWaitTimems);
+                    }
                 }
+                catch (Exception e)
+                {
+                    // We don't want this thread to abort since nothing will be read until a container restart.
+                    // We shouldn't get here since IO-related errors should already be handled,
+                    // so errors here should be investigated and stamped out.
+                    Trace.WriteLine($"Unexpected error in Listener, attempting to continue: {e}");
+                }
+
             } while (true);
         }
 
@@ -251,9 +267,9 @@ namespace PellaBridge
                     netStream = tcpClient.GetStream();
                     return;
                 }
-                catch (SocketException e)
+                catch (Exception e) when (e is SocketException || e is IOException)
                 {
-                    Trace.WriteLine($"Socket Error received while reconnecting: {e}");
+                    Trace.WriteLine($"Reconnection to bridge failed: {e.Message}");
                     Thread.Sleep(reconnectWaitTimems);
                 }
 
