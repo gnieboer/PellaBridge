@@ -301,9 +301,21 @@ namespace PellaBridge
             string jsonOutput = JsonSerializer.Serialize(device);
             using var client = new HttpClient();
             UriBuilder b = new UriBuilder("http", hubIP.ToString(), 39500);
-            client.PostAsync(
+            try
+            {
+                client.PostAsync(
                 b.ToString(),
                  new StringContent(jsonOutput, Encoding.UTF8, "application/json")).Wait();
+            }
+            catch (TaskCanceledException)
+            {
+                Trace.WriteLine($"Status updated failed on device ID {device.Id} to {b} due to timeout");
+            }
+            catch (HttpRequestException)
+            {
+                Trace.WriteLine($"Status updated failed on device ID {device.Id} to {b} due to network error");
+            }
+
         }
     }
 }

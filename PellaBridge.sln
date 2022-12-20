@@ -7,6 +7,7 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "PellaBridge", "PellaBridge\
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{28E9CDA0-3EC8-4727-9C6E-D95EB54E18D0}"
 	ProjectSection(SolutionItems) = preProject
+		CHANGELOG.md = CHANGELOG.md
 		groovy\Pella Door Lock.groovy = groovy\Pella Door Lock.groovy
 		groovy\Pella Door.groovy = groovy\Pella Door.groovy
 		groovy\Pella Garage Door.groovy = groovy\Pella Garage Door.groovy
