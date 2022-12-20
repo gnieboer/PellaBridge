@@ -296,16 +296,16 @@ namespace PellaBridge
             SendUpdateToHub(device);
             return device;
         }
-        private void SendUpdateToHub(PellaBridgeDevice device)
+        private async void SendUpdateToHub(PellaBridgeDevice device)
         {
             string jsonOutput = JsonSerializer.Serialize(device);
             using var client = new HttpClient();
             UriBuilder b = new UriBuilder("http", hubIP.ToString(), 39500);
             try
             {
-                client.PostAsync(
+                await client.PostAsync(
                 b.ToString(),
-                 new StringContent(jsonOutput, Encoding.UTF8, "application/json")).Wait();
+                 new StringContent(jsonOutput, Encoding.UTF8, "application/json"));
             }
             catch (TaskCanceledException)
             {
@@ -314,6 +314,10 @@ namespace PellaBridge
             catch (HttpRequestException)
             {
                 Trace.WriteLine($"Status updated failed on device ID {device.Id} to {b} due to network error");
+            }
+            catch (Exception)
+            {
+                Trace.WriteLine($"Status updated failed on device ID {device.Id} to {b} due to misc error");
             }
 
         }
