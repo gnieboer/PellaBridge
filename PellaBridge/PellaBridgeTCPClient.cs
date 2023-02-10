@@ -91,9 +91,10 @@ namespace PellaBridge
                 {
                     BridgeIPAddress = IPAddress.Parse(bridgeEnvIP);
                 }
-                catch (FormatException)
+                catch (FormatException ex)
                 {
-                    Trace.WriteLine("Env Variable IP Address in invalid format: {0}", bridgeEnvIP);
+                    Console.WriteLine("Env Variable IP Address in invalid format: {0}", bridgeEnvIP);
+                    throw ex;
                 }
             }
         }

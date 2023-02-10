@@ -1,0 +1,5 @@
+name: "Pella Insynctive"
+packageKey: "Pella-Insynctive-GCN"
+permissions:
+  lan: {}
+  discovery: {}

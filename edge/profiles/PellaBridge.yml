@@ -1,0 +1,32 @@
+name: PellaBridge.v1
+components:
+  - id: main
+    capabilities:
+    - id: refresh
+      version: 1
+preferences:
+  - title: "Server IP"
+    name: "searchTarget"
+    description: "IP Address of Pella Bridge Container"
+    required: true 
+    preferenceType: string
+    definition:
+      stringType: text
+      default: "192.168.0.100"
+  - title: "Server Port"
+    name: "searchTargetPort"
+    description: "Port of Pella Bridge Container"
+    required: true 
+    preferenceType: string
+    definition:
+      stringType: text
+      default: "80"      
+  - title: "Polling Internal"
+    name: pollingInterval
+    description: "Poll interval (in seconds)"
+    required: true
+    preferenceType: integer
+    definition:
+      minimum: 10
+      maximum: 3600
+      default: 300

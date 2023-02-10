@@ -1,6 +1,6 @@
 ## Pella Insynctive SmartThings Integration
 
-Version: 1.0.1
+Version: 2.0.0
 
 This a project to bring integration of the Pella Insynctive system into SmartThings.
 
@@ -68,7 +68,10 @@ HUB_IP_ADDRESS : The IP address of the smartthings hub
 BRIDGE_IP_ADDRESS : The IP address set in the previous step
 Ensure the addresses will both be reachable from the proxy.  They need not be on the same subnet if you have a segmented LAN, but DO NOT
 expose the address to the Internet as the bridge has no security (and therefore the proxy does not either).
-The proxy connects to the bridge on Port 23, connects to the hub on 39500, and receives from the hub on the port of your choice (32781 by default command below), so those ports need to be open
+The proxy connects to the bridge on Port 23, connects to the hub on a dynamic port, and receives from the hub on the port of your choice (32781 by default command below), so those ports need to be open
+The proxy advertises via SSDP, and the Edge Driver will listen and discover the IP and port.  However, if you are on different subnets, you will likely have to manually configure the driver.
+If your container host uses multiple IP addresses, you make need to modify the default environment variable ASPNETCORE_URLS to specify a specific IP to advertise over SSDP.
+The hub driver in the Edge environment will listen on a random port.  It 
 Use the following to pull the image from Docker Hub and get it running on the server of your choice, or the equivalent in your favorite Docker GUI.
 ```
 docker pull gcndevelopment/pellabridge
@@ -87,16 +90,20 @@ Watch the console output of the container to see the data being transmitted as e
 
 ### Step 5
 
-From the /groovy subdir, install the device handlers you have physically, as well as the Pella Insynctive Bridge smart app
+Install the Edge Driver using the following channel invite:
 
-**TEST**: Make sure you can see them in your IDE
+https://bestow-regional.api.smartthings.com/invite/3X21pmo5NRMR
 
-### Step 6
+Run "Add Devices".  If SSDP was successful, all your Pella Devices should appear shortly.  Skip to Step 7
+
+**TEST**: You should at a minimum have added a bridge device
+
+### Step 6 [Manual IP Configuration]
 
 Configure the Bridge in the app.  Enter the proxy's IP address (NOT the bridge) and port, and the enter "Next".  The app will query the proxy and get information all the devices and install them.
 Once you see the number of devices installed, click "Save"
 The device will have preferences populated.  You should not have a need to change them unless you move the hub or reprogram devices (though it may be simpler to just delete them all and re-configure the smartapp)
-The bridge itself will not appear as a device since it really has no function beyond enabling the connections.
+The bridge itself can be ignored since it really has no function beyond enabling the connections.
 
 **TEST** Observe that the number of installed devices matched expectations.
 
@@ -120,12 +127,12 @@ The REST API is a simple one, entirely GET commands, so straightforward to acces
 - GET: api/PellaBridge/devicestatusstring/{id} (device status as string)
 - GET: api/PellaBridge/setshade/{id}/{value} (send shade command, 0-100 is % open, >100 are special commands, see DH code)
 - GET: api/PellaBridge/pushdevice/{id} (send a fake push notification to the ST hub, used only for help troubleshoot)
+- GET: api/PellaBridge/registerport/{port} (sets what port the proxy should use when calling back to the hub.  Also displays current status)
 
 A combination of container console logs and ST logs should be plenty to identify where a connection might be failing.  Use the last API call in the list simulate opening the door/lock.
 If pushes are failing, restart the container and see if it fixes it.  If that is required often, please try to capture errors from the console and post them.
 
 I'd recommend starting from the bridge and working from there to the Hub.  Examing the container console to be sure the calls are being received and responded to by the bridge, then manually engage the API and confirm that the container is returning expected JSON, then finally ensure ST configuration is correct.
-
 
 
 

@@ -25,6 +25,7 @@ namespace PellaBridge
     public class PellaBridgeClient
     {
         private readonly PellaBridgeTCPClient tcpClient;
+        private readonly PellaBridgeSSDP ssdpAdvertiser;
         private BridgeInfo bridgeInfo;
         private List<PellaBridgeDevice> devices = new List<PellaBridgeDevice>();
 
@@ -53,11 +54,27 @@ namespace PellaBridge
         private int lastID;
         private string lastCommand;
 
+        // Dynamic port number, default is the prior (pre-edge) architecture port
+        private int _portNumber = 39500;
         public PellaBridgeClient()
         {
             tcpClient = new PellaBridgeTCPClient();
+            ssdpAdvertiser = new PellaBridgeSSDP();
+            ssdpAdvertiser.StartPublishing();
             bridgeInfo = new BridgeInfo();
-            hubIP = IPAddress.Parse(Environment.GetEnvironmentVariable("HUB_IP_ADDRESS"));
+            string envIpAddress = Environment.GetEnvironmentVariable("HUB_IP_ADDRESS");
+            if (envIpAddress == null)
+            {
+                throw new ApplicationException("IP Address not found.  Set Environment variable HUB_IP_ADDRESS to IP of SmartThings Hub");
+            }
+            try
+            {
+                hubIP = IPAddress.Parse(envIpAddress);
+            }
+            catch (FormatException)
+            {
+                throw new ApplicationException("Hub IP Address in invalid format"); 
+            }
             System.Threading.Thread listenerThread = new System.Threading.Thread(Listener);
             listenerThread.Start();
             tcpClient.Init();
@@ -111,6 +128,7 @@ namespace PellaBridge
                         throw new TimeoutException("Request timed out");
                     }
                 }
+                ssdpAdvertiser.UpdateSSDP(_devices);
                 devices = _devices;
                 return devices;
             }
@@ -300,7 +318,7 @@ namespace PellaBridge
         {
             string jsonOutput = JsonSerializer.Serialize(device);
             using var client = new HttpClient();
-            UriBuilder b = new UriBuilder("http", hubIP.ToString(), 39500);
+            UriBuilder b = new UriBuilder("http", hubIP.ToString(), _portNumber);
             try
             {
                 await client.PostAsync(
@@ -320,6 +338,28 @@ namespace PellaBridge
                 Trace.WriteLine($"Status updated failed on device ID {device.Id} to {b} due to misc error");
             }
 
+        }
+
+        /// <summary>
+        /// In the Edge architecture, each driver is dynamically assigned a port to listen on
+        /// This will set what port on the hub the updates should be sent to
+        /// </summary>
+        /// <param name="newPort">port hub will listen on</param>
+        public void RegisterPort(int newPort)
+        {
+            if (_portNumber != newPort) {
+                Trace.WriteLine($"Received request to change hub port to: {newPort}");
+            }
+            _portNumber = newPort;
+        }
+
+        /// <summary>
+        /// Describes the root device and children
+        /// </summary>
+        /// <returns>An XML document that conforms to the SSDP spec and provides needed uPnP information</returns>
+        public string DescribeDevices()
+        {
+            return ssdpAdvertiser.DescribeDevices();
         }
     }
 }

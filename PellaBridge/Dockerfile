@@ -16,6 +16,8 @@ FROM build AS publish
 RUN dotnet publish "PellaBridge.csproj" -c Release -o /app/publish
 
 FROM base AS final
+ENV BRIDGE_IP_ADDRESS = 192.168.0.100
+ENV HUB_IP_ADDRESS = 192.168.0.200
 WORKDIR /app
 COPY --from=publish /app/publish .
 ENTRYPOINT ["dotnet", "PellaBridge.dll"]

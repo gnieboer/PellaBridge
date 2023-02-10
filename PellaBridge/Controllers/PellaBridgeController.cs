@@ -79,5 +79,32 @@ namespace PellaBridge.Controllers
         {
             return Program.pellaBridgeClient.PushDevice(id);
         }
+
+        // <summary>
+        // Returns an XML string to be used by SSDP discoverers
+        // </summary>
+        // <returns>Returns an XML string to be used by SSDP discoverers
+        [HttpGet]
+        [Route("description")]
+        public string GetDeviceDescription()
+        {
+            string desc;
+            desc = Program.pellaBridgeClient.DescribeDevices();
+            return desc;
+        }
+
+        /// <summary>
+        /// In the Edge architecture, each driver is dynamically assigned a port to listen on
+        /// This will set what port on the hub the updates should be sent to
+        /// </summary>
+        /// <param name="port">port that hub driver is listening on</param>
+        /// <returns>XML document describing current devices including current status.  Allows a single poll request to update port and get status</returns>
+        [HttpGet]
+        [Route("registerport/{port}")]
+        public string RegisterPort(int port)
+        {
+            Program.pellaBridgeClient.RegisterPort(port);
+            return Program.pellaBridgeClient.DescribeDevices(); ;
+        }
     }
 }
